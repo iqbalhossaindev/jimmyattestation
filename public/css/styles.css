@@ -35,3 +35,9 @@ footer{padding:22px;text-align:center;color:var(--muted);font-size:13px}.footer-
 .group-row td{background:#f2f5ff;color:#0b3f94;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
 .store-path{display:block;font-size:12px;color:#7b8194;margin-top:3px}
 @media (max-width: 760px){.filter-row{grid-template-columns:1fr}.table-wrap table{min-width:900px}}
+
+textarea{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);outline:none;resize:vertical;font:inherit}
+textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(0,64,147,.12)}
+.modal-backdrop{position:fixed;inset:0;z-index:80;background:rgba(2,6,23,.58);display:flex;align-items:center;justify-content:center;padding:18px}
+.modal-card{width:min(92vw,520px);background:#fff;border-radius:22px;box-shadow:0 28px 80px rgba(0,0,0,.30);padding:22px;border:1px solid #e6edf7}
+.modal-card h2{margin:0 0 8px}

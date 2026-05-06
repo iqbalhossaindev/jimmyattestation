@@ -111,7 +111,7 @@
       <section id="attendance" class="section">
         <div class="card">
           <h2>My Attendance</h2>
-          <div class="table-wrap"><table><thead><tr><th>Date</th><th>Store</th><th>Check In</th><th>Check Out</th><th>Hours</th><th>Sales Qty</th><th>Sales Value</th><th>Selfie Review</th><th>Location</th><th>Status</th></tr></thead><tbody id="attendanceRows"></tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th>Date</th><th>Store</th><th>Check In</th><th>Check Out</th><th>Hours</th><th>Sales Qty</th><th>Sales Value</th><th>No Sale Reason</th><th>Selfie Review</th><th>Location</th><th>Status</th></tr></thead><tbody id="attendanceRows"></tbody></table></div>
         </div>
       </section>
 
@@ -124,6 +124,20 @@
       <footer>Jimmy Attendance System. Developer: <a href="https://www.kestford.com" target="_blank">www.kestford.com</a></footer>
     </main>
   </div>
+
+  <div id="noSaleModal" class="modal-backdrop" style="display:none">
+    <div class="modal-card">
+      <h2>No Sale Reason</h2>
+      <p class="hint">No product quantity was entered. Please explain the situation professionally so admin can review it.</p>
+      <label>Reason</label>
+      <textarea id="noSaleReasonInput" rows="5" placeholder="Example: Customer traffic was low, customers asked for unavailable models, price objection, demo issue, or other store situation."></textarea>
+      <div class="toolbar" style="margin-top:14px;justify-content:flex-end">
+        <button class="secondary" type="button" onclick="cancelNoSaleReason()">Cancel</button>
+        <button type="button" onclick="submitNoSaleReason()">Submit Reason</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/js/common.js"></script>
   <script src="/js/worker.js"></script>
 </body>

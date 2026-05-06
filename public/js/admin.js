@@ -206,13 +206,14 @@ function renderAttendance() {
       <td>${r.converted_customers ?? '-'}</td>
       <td>${r.total_qty ?? '-'}</td>
       <td>${Number(r.total_value || 0).toFixed(2)}</td>
+      <td>${r.no_sale_reason ? `<span class="muted">${escapeHtml(r.no_sale_reason)}</span>` : '-'}</td>
       <td>${selfieCell(r.in_face_image_path, r.id, 'in', r.in_face_review_status)}</td>
       <td>${selfieCell(r.out_face_image_path, r.id, 'out', r.out_face_review_status)}</td>
       <td>${locationCell(r)}</td>
       <td>${manualReviewCell(r)}</td>
       <td><span class="badge ${r.status === 'closed' ? 'ok' : 'warn'}">${escapeHtml(r.status)}</span></td>
     </tr>
-  `).join('') || '<tr><td colspan="15">No attendance records match this filter.</td></tr>';
+  `).join('') || '<tr><td colspan="16">No attendance records match this filter.</td></tr>';
 }
 
 async function loadReports() {

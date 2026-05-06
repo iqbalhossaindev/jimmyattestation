@@ -126,11 +126,12 @@ async function loadAttendance() {
       <td>${fmtMinutes(r.total_work_minutes)}</td>
       <td>${r.total_qty ?? '-'}</td>
       <td>${Number(r.total_value || 0).toFixed(2)}</td>
+      <td>${r.no_sale_reason ? `<span class="muted">${escapeHtml(r.no_sale_reason)}</span>` : '-'}</td>
       <td>${renderReviewStatus(r)}</td>
       <td>${renderLocationStatus(r)}</td>
       <td><span class="badge ${r.status === 'closed' ? 'ok' : 'warn'}">${escapeHtml(r.status)}</span></td>
     </tr>
-  `).join('') || '<tr><td colspan="10">No attendance yet.</td></tr>';
+  `).join('') || '<tr><td colspan="11">No attendance yet.</td></tr>';
 }
 
 async function loadReports() {
@@ -241,11 +242,39 @@ async function checkIn() {
 function buildSalesItems() {
   return [...document.querySelectorAll('#salesItems tr')].map(tr => ({ product_id: Number(tr.dataset.productId), quantity: Number(tr.querySelector('.qty').value || 0), unit_price: Number(tr.querySelector('.price').value || 0) }));
 }
+let noSaleReasonResolver = null;
+function askNoSaleReason() {
+  return new Promise(resolve => {
+    noSaleReasonResolver = resolve;
+    noSaleReasonInput.value = '';
+    noSaleModal.style.display = 'flex';
+    setTimeout(() => noSaleReasonInput.focus(), 100);
+  });
+}
+function submitNoSaleReason() {
+  const reason = noSaleReasonInput.value.trim();
+  if (!reason) return alert('Please write a short reason before submitting.');
+  noSaleModal.style.display = 'none';
+  noSaleReasonResolver?.(reason);
+  noSaleReasonResolver = null;
+}
+function cancelNoSaleReason() {
+  noSaleModal.style.display = 'none';
+  noSaleReasonResolver?.(null);
+  noSaleReasonResolver = null;
+}
 async function checkOut() {
   try {
     recalcSales();
+    const items = buildSalesItems();
+    const totalSoldQty = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    let noSaleReason = '';
+    if (totalSoldQty === 0) {
+      noSaleReason = await askNoSaleReason();
+      if (!noSaleReason) return;
+    }
     const { image, loc } = await ensureLocationAndImage();
-    const payload = { ...loc, image, total_customers: Number(totalCustomers.value || 0), converted_customers: Number(convertedCustomers.value || 0), items: buildSalesItems() };
+    const payload = { ...loc, image, total_customers: Number(totalCustomers.value || 0), converted_customers: Number(convertedCustomers.value || 0), items, no_sale_reason: noSaleReason };
     const data = await api('/api/attendance/check-out', { method: 'POST', body: JSON.stringify(payload) });
     showLocationResult(data.location);
     alert(data.location.warning ? `Checked out with location warning. Distance: ${data.location.distance_m}m. Total value: ${Number(data.total_value).toFixed(2)}.` : `Checked out successfully. Total value: ${Number(data.total_value).toFixed(2)}. Work time: ${fmtMinutes(data.total_work_minutes)}.`);

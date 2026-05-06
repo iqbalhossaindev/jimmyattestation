@@ -61,3 +61,10 @@ STORE_RADIUS_M=500
 ## Important production note
 
 This project uses SQLite and local file storage. Free hosting is suitable for demos and testing. For real company attendance, salary, HR records, or long-term storage, move the database to PostgreSQL and photos/PDFs to persistent cloud storage.
+
+
+## No-sale reason
+When staff checks out with zero product quantity sold, the system asks for a professional reason. Admin can view this reason in the attendance and sales table.
+
+## Storage folder upload
+The storage folders include `_keep.txt` placeholder files so GitHub can upload the folders.

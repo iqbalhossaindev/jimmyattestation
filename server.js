@@ -156,6 +156,7 @@ function initDb() {
       conversion_rate REAL NOT NULL DEFAULT 0,
       total_qty INTEGER NOT NULL DEFAULT 0,
       total_value REAL NOT NULL DEFAULT 0,
+      no_sale_reason TEXT,
       logout_time TEXT NOT NULL,
       submitted_at TEXT NOT NULL,
       created_at TEXT NOT NULL,
@@ -263,6 +264,7 @@ function ensureMigrations() {
   ensureColumn('stores', 'location_captured_by', 'INTEGER');
   ensureColumn('stores', 'location_captured_at', 'TEXT');
   ensureColumn('monthly_attendance_reports', 'location_warning_count', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn('daily_sales_reports', 'no_sale_reason', 'TEXT');
 }
 
 function seedDb() {
@@ -549,7 +551,7 @@ async function generateWorkerMonthlyReport(workerId, month, year) {
 
   const rows = db.prepare(`
     SELECT a.*, s.name AS store_name, s.store_group, s.opening_time, s.closing_time,
-      ds.total_customers, ds.converted_customers, ds.total_qty, ds.total_value, ds.conversion_rate
+      ds.total_customers, ds.converted_customers, ds.total_qty, ds.total_value, ds.conversion_rate, ds.no_sale_reason
     FROM attendance a
     JOIN stores s ON s.id = a.store_id
     LEFT JOIN daily_sales_reports ds ON ds.attendance_id = a.id
@@ -644,7 +646,8 @@ async function generateWorkerMonthlyReport(workerId, month, year) {
         doc.text(formatMinutes(r.total_work_minutes || 0), 333, y, { width: 55 });
         doc.text(`${statusBadgeText(r.in_face_review_status)} / ${r.out_face_review_status ? statusBadgeText(r.out_face_review_status) : '-'}`, 388, y, { width: 50 });
         doc.text(`${r.in_location_status || '-'} / ${r.out_location_status || '-'}${(Number(r.in_location_warning||0)+Number(r.out_location_warning||0)) ? ' *' : ''}`, 438, y, { width: 58 });
-        doc.text(`${Number(r.total_qty || 0)} / ${Number(r.total_value || 0).toFixed(2)}`, 496, y, { width: 58 });
+        const saleText = Number(r.total_qty || 0) === 0 && r.no_sale_reason ? `No sale: ${String(r.no_sale_reason).slice(0, 38)}` : `${Number(r.total_qty || 0)} / ${Number(r.total_value || 0).toFixed(2)}`;
+        doc.text(saleText, 496, y, { width: 58 });
         doc.y = y + 17;
       });
 
@@ -772,7 +775,7 @@ app.get('/api/worker/attendance/open', auth, (req, res) => {
 
 app.get('/api/worker/attendance', auth, (req, res) => {
   const rows = db.prepare(`
-    SELECT a.*, s.name AS store_name, s.store_group, ds.total_customers, ds.converted_customers, ds.total_qty, ds.total_value
+    SELECT a.*, s.name AS store_name, s.store_group, ds.total_customers, ds.converted_customers, ds.total_qty, ds.total_value, ds.no_sale_reason
     FROM attendance a
     JOIN stores s ON s.id = a.store_id
     LEFT JOIN daily_sales_reports ds ON ds.attendance_id = a.id
@@ -818,7 +821,7 @@ app.post('/api/attendance/check-in', auth, (req, res) => {
 
 app.post('/api/attendance/check-out', auth, (req, res) => {
   if (req.user.role !== 'worker') return res.status(403).json({ error: 'Only merchandisers can check out.' });
-  const { latitude, longitude, accuracy, image, total_customers, converted_customers, items } = req.body || {};
+  const { latitude, longitude, accuracy, image, total_customers, converted_customers, items, no_sale_reason } = req.body || {};
   const open = db.prepare(`
     SELECT a.*, s.latitude AS store_lat, s.longitude AS store_lng, s.radius_m, s.name AS store_name, s.location_locked, s.location_captured_by, s.location_captured_at
     FROM attendance a JOIN stores s ON s.id = a.store_id
@@ -857,6 +860,10 @@ app.post('/api/attendance/check-out', auth, (req, res) => {
     const customers = Math.max(0, Number.parseInt(total_customers || 0, 10));
     const converted = Math.max(0, Number.parseInt(converted_customers || 0, 10));
     const conversionRate = customers > 0 ? Number(((converted / customers) * 100).toFixed(2)) : 0;
+    const noSaleReason = String(no_sale_reason || '').trim().slice(0, 1000);
+    if (totalQty === 0 && !noSaleReason) {
+      return res.status(400).json({ error: 'No sale reason is required when no product quantity is sold.' });
+    }
     const checkoutTime = nowIso();
     const workMinutes = minutesBetween(open.check_in_time, checkoutTime);
 
@@ -869,10 +876,10 @@ app.post('/api/attendance/check-out', auth, (req, res) => {
 
       const reportInfo = db.prepare(`
         INSERT INTO daily_sales_reports (attendance_id, worker_id, store_id, report_date, total_customers, converted_customers,
-          conversion_rate, total_qty, total_value, logout_time, submitted_at, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          conversion_rate, total_qty, total_value, no_sale_reason, logout_time, submitted_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(open.id, req.user.id, open.store_id, dayjs(checkoutTime).format('YYYY-MM-DD'), customers, converted, conversionRate,
-        totalQty, totalValue, dayjs(checkoutTime).format('HH:mm'), checkoutTime, checkoutTime, checkoutTime);
+        totalQty, totalValue, noSaleReason || null, dayjs(checkoutTime).format('HH:mm'), checkoutTime, checkoutTime, checkoutTime);
 
       const insertItem = db.prepare(`
         INSERT INTO daily_sales_report_items (daily_sales_report_id, product_id, product_name_snapshot, unit_price_snapshot, quantity, value, created_at, updated_at)
@@ -1061,7 +1068,7 @@ app.delete('/api/admin/stores/:id', auth, requireAdmin, (req, res) => {
 
 app.get('/api/admin/attendance', auth, requireAdmin, (req, res) => {
   const rows = db.prepare(`
-    SELECT a.*, u.name AS worker_name, u.employee_code, s.name AS store_name, s.store_group, ds.total_customers, ds.converted_customers, ds.total_qty, ds.total_value
+    SELECT a.*, u.name AS worker_name, u.employee_code, s.name AS store_name, s.store_group, ds.total_customers, ds.converted_customers, ds.total_qty, ds.total_value, ds.no_sale_reason
     FROM attendance a
     JOIN users u ON u.id = a.worker_id
     JOIN stores s ON s.id = a.store_id
