@@ -5,11 +5,12 @@ let stream = null;
 let latestImage = null;
 let latestLocation = null;
 let products = [];
+let meCache = null;
 
 async function bootWorker() {
   const me = await api('/api/me');
-  const u = me.user;
-  document.getElementById('welcomeText').textContent = `${u.name} | ${u.employee_code || u.email}`;
+  meCache = me.user;
+  renderProfile(meCache);
   document.getElementById('faceBadge').textContent = 'Manual selfie review mode';
   document.getElementById('faceBadge').className = 'badge warn';
   await loadStores();
@@ -20,9 +21,42 @@ async function bootWorker() {
   setInterval(() => document.getElementById('logoutPreview').textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}), 1000);
 }
 
+function renderProfile(u) {
+  document.getElementById('welcomeText').textContent = `${u.name} | ${u.employee_code || u.email}`;
+  dashboardAvatar.innerHTML = avatarHtml(u.profile_image_path, u.name);
+  profileAvatar.innerHTML = avatarHtml(u.profile_image_path, u.name);
+  dashboardName.textContent = u.name;
+  dashboardStaffId.textContent = u.employee_code || u.email;
+  profileName.textContent = u.name;
+  profileStaffId.textContent = u.employee_code || u.email;
+  profileRole.textContent = u.role === 'worker' ? 'Staff / Merchandiser' : u.role;
+  locationWarningCount.textContent = u.location_warning_count || 0;
+  profileWarnings.textContent = u.location_warning_count || 0;
+  lastLoginText.textContent = fmtDate(u.last_login_at);
+  lastLogoutText.textContent = fmtDate(u.last_logout_at);
+}
+
+async function uploadProfilePhoto() {
+  try {
+    const file = profilePhotoInput.files[0];
+    if (!file) return alert('Please choose a profile picture first.');
+    const image = await fileToDataUrl(file);
+    await api('/api/profile/photo', { method: 'POST', body: JSON.stringify({ image }) });
+    const me = await api('/api/me');
+    meCache = me.user;
+    localStorage.setItem('user', JSON.stringify(me.user));
+    renderProfile(me.user);
+    profilePhotoInput.value = '';
+    alert('Profile picture updated.');
+  } catch (err) { alert(err.message); }
+}
+
 async function loadStores() {
   const data = await api('/api/stores');
-  storeSelect.innerHTML = data.stores.map(s => `<option value="${s.id}">${escapeHtml(s.name)} (${s.code})</option>`).join('');
+  storeSelect.innerHTML = data.stores.map(s => {
+    const status = Number(s.location_locked) ? `${Number(s.radius_m || 500)}m range` : 'first check-in sets location';
+    return `<option value="${s.id}">${escapeHtml(s.store_group || 'General')} / ${escapeHtml(s.name)} (${escapeHtml(s.code)}) - ${status}</option>`;
+  }).join('');
 }
 
 async function loadProducts() {
@@ -70,21 +104,33 @@ async function loadOpenAttendance() {
   }
 }
 
+function renderLocationStatus(r) {
+  const inWarn = Number(r.in_location_warning || 0);
+  const outWarn = Number(r.out_location_warning || 0);
+  const inText = `${r.in_location_status || '-'}${r.check_in_distance_m !== null && r.check_in_distance_m !== undefined ? ` (${r.check_in_distance_m}m)` : ''}`;
+  const outText = r.check_out_time ? `${r.out_location_status || '-'}${r.check_out_distance_m !== null && r.check_out_distance_m !== undefined ? ` (${r.check_out_distance_m}m)` : ''}` : '-';
+  return `<span class="badge ${inWarn ? 'bad' : 'ok'}">IN: ${escapeHtml(inText)}</span><br><span class="badge ${outWarn ? 'bad' : 'ok'}">OUT: ${escapeHtml(outText)}</span>`;
+}
+
 async function loadAttendance() {
   const data = await api('/api/worker/attendance');
+  const warningTotal = data.attendance.reduce((sum, r) => sum + Number(r.in_location_warning || 0) + Number(r.out_location_warning || 0), 0);
+  locationWarningCount.textContent = warningTotal;
+  profileWarnings.textContent = warningTotal;
   attendanceRows.innerHTML = data.attendance.map(r => `
     <tr>
       <td>${fmtDate(r.check_in_time)}</td>
-      <td>${escapeHtml(r.store_name)}</td>
+      <td>${escapeHtml(r.store_group ? `${r.store_group} / ${r.store_name}` : r.store_name)}</td>
       <td>${fmtTime(r.check_in_time)}</td>
       <td>${fmtTime(r.check_out_time)}</td>
       <td>${fmtMinutes(r.total_work_minutes)}</td>
       <td>${r.total_qty ?? '-'}</td>
       <td>${Number(r.total_value || 0).toFixed(2)}</td>
       <td>${renderReviewStatus(r)}</td>
+      <td>${renderLocationStatus(r)}</td>
       <td><span class="badge ${r.status === 'closed' ? 'ok' : 'warn'}">${escapeHtml(r.status)}</span></td>
     </tr>
-  `).join('') || '<tr><td colspan="9">No attendance yet.</td></tr>';
+  `).join('') || '<tr><td colspan="10">No attendance yet.</td></tr>';
 }
 
 async function loadReports() {
@@ -97,23 +143,21 @@ async function loadReports() {
       <td>${r.total_absent_days}</td>
       <td>${fmtMinutes(r.total_work_minutes)}</td>
       <td>${Number(r.total_sales_value || 0).toFixed(2)}</td>
+      <td><span class="badge ${Number(r.location_warning_count || 0) ? 'bad' : 'ok'}">${Number(r.location_warning_count || 0)}</span></td>
       <td><button class="small" onclick="downloadReport('${r.report_id}')">PDF</button></td>
     </tr>
-  `).join('') || '<tr><td colspan="7">No monthly reports generated yet.</td></tr>';
+  `).join('') || '<tr><td colspan="8">No monthly reports generated yet.</td></tr>';
 }
-
 
 function badgeClass(status) {
   if (status === 'approved') return 'ok';
   if (status === 'rejected' || status === 'expired') return 'bad';
   return 'warn';
 }
-
 function reviewLabel(status) {
   if (!status) return '-';
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
-
 function renderReviewStatus(r) {
   const inStatus = r.in_face_review_status || 'pending';
   const outStatus = r.out_face_review_status || (r.check_out_time ? 'pending' : null);
@@ -129,7 +173,6 @@ async function startCamera() {
     alert('Camera permission failed: ' + err.message);
   }
 }
-
 async function captureSnapshot() {
   if (!stream) await startCamera();
   await new Promise(resolve => setTimeout(resolve, 250));
@@ -145,16 +188,11 @@ async function captureSnapshot() {
   }
   return latestImage;
 }
-
 function getLocationNow() {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) return reject(new Error('Geolocation is not supported on this device.'));
     navigator.geolocation.getCurrentPosition(pos => {
-      latestLocation = {
-        latitude: pos.coords.latitude,
-        longitude: pos.coords.longitude,
-        accuracy: pos.coords.accuracy
-      };
+      latestLocation = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy };
       locationStatus.textContent = `${Math.round(pos.coords.accuracy)}m accuracy`;
       resolve(latestLocation);
     }, err => {
@@ -163,47 +201,57 @@ function getLocationNow() {
     }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
   });
 }
-
 async function ensureLocationAndImage() {
   const image = latestImage || await captureSnapshot();
   const loc = latestLocation || await getLocationNow();
   return { image, loc };
 }
-
+function showLocationResult(location) {
+  if (!location) return;
+  if (location.store_location_captured) {
+    locationWarningBox.style.display = 'block';
+    locationWarningBox.className = 'success-box';
+    locationWarningBox.textContent = 'Store location captured automatically for future 0.5 KM validation.';
+    return;
+  }
+  if (location.warning) {
+    locationWarningBox.style.display = 'block';
+    locationWarningBox.className = 'warning-box';
+    locationWarningBox.textContent = `Warning: you are outside the 0.5 KM store range. Distance recorded: ${location.distance_m}m. Admin will see this warning.`;
+  } else {
+    locationWarningBox.style.display = 'none';
+  }
+}
+async function refreshProfile() {
+  const me = await api('/api/me');
+  meCache = me.user;
+  localStorage.setItem('user', JSON.stringify(me.user));
+  renderProfile(me.user);
+}
 async function checkIn() {
   try {
     const { image, loc } = await ensureLocationAndImage();
     const data = await api('/api/attendance/check-in', { method: 'POST', body: JSON.stringify({ store_id: storeSelect.value, ...loc, image }) });
-    alert(`Checked in successfully. Store selfie submitted for manual admin review. Distance: ${data.location.distance_m}m.`);
-    latestImage = null;
-    await loadOpenAttendance(); await loadAttendance();
+    showLocationResult(data.location);
+    alert(data.location.warning ? `Checked in with location warning. Distance: ${data.location.distance_m}m.` : `Checked in successfully. Distance: ${data.location.distance_m}m.`);
+    latestImage = null; latestLocation = null;
+    await loadOpenAttendance(); await loadAttendance(); await refreshProfile(); await loadStores();
   } catch (err) { alert(err.message); }
 }
-
 function buildSalesItems() {
-  return [...document.querySelectorAll('#salesItems tr')].map(tr => ({
-    product_id: Number(tr.dataset.productId),
-    quantity: Number(tr.querySelector('.qty').value || 0),
-    unit_price: Number(tr.querySelector('.price').value || 0)
-  }));
+  return [...document.querySelectorAll('#salesItems tr')].map(tr => ({ product_id: Number(tr.dataset.productId), quantity: Number(tr.querySelector('.qty').value || 0), unit_price: Number(tr.querySelector('.price').value || 0) }));
 }
-
 async function checkOut() {
   try {
     recalcSales();
     const { image, loc } = await ensureLocationAndImage();
-    const payload = {
-      ...loc,
-      image,
-      total_customers: Number(totalCustomers.value || 0),
-      converted_customers: Number(convertedCustomers.value || 0),
-      items: buildSalesItems()
-    };
+    const payload = { ...loc, image, total_customers: Number(totalCustomers.value || 0), converted_customers: Number(convertedCustomers.value || 0), items: buildSalesItems() };
     const data = await api('/api/attendance/check-out', { method: 'POST', body: JSON.stringify(payload) });
-    alert(`Checked out successfully. Store selfie submitted for manual admin review. Total value: ${Number(data.total_value).toFixed(2)}. Work time: ${fmtMinutes(data.total_work_minutes)}.`);
+    showLocationResult(data.location);
+    alert(data.location.warning ? `Checked out with location warning. Distance: ${data.location.distance_m}m. Total value: ${Number(data.total_value).toFixed(2)}.` : `Checked out successfully. Total value: ${Number(data.total_value).toFixed(2)}. Work time: ${fmtMinutes(data.total_work_minutes)}.`);
     document.querySelectorAll('#salesItems .qty').forEach(i => i.value = 0);
     totalCustomers.value = 0; convertedCustomers.value = 0; latestImage = null; latestLocation = null; recalcSales();
-    await loadOpenAttendance(); await loadAttendance();
+    await loadOpenAttendance(); await loadAttendance(); await refreshProfile();
   } catch (err) { alert(err.message); }
 }
 

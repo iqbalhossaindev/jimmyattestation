@@ -23,11 +23,13 @@ const STORAGE_DIR = path.join(ROOT, 'storage');
 const DB_DIR = path.join(STORAGE_DIR, 'db');
 const REPORTS_DIR = path.join(STORAGE_DIR, 'reports');
 const FACES_DIR = path.join(STORAGE_DIR, 'faces');
+const PROFILES_DIR = path.join(STORAGE_DIR, 'profiles');
 const LOGO_PATH = path.join(ROOT, 'public', 'assets', 'jimmy-logo.jpg');
 const FACE_PHOTO_RETENTION_DAYS = Number(process.env.FACE_PHOTO_RETENTION_DAYS || 40);
 const FACE_VERIFY_MODE = process.env.FACE_VERIFY_MODE || 'manual';
+const STORE_RADIUS_M = Number(process.env.STORE_RADIUS_M || 500);
 
-for (const dir of [STORAGE_DIR, DB_DIR, REPORTS_DIR, FACES_DIR]) {
+for (const dir of [STORAGE_DIR, DB_DIR, REPORTS_DIR, FACES_DIR, PROFILES_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
@@ -45,6 +47,15 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function slugCode(value) {
+  return String(value || 'store')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 42) || `STORE-${Date.now()}`;
+}
+
 function initDb() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -58,6 +69,9 @@ function initDb() {
       active INTEGER NOT NULL DEFAULT 1,
       assigned_store_id INTEGER,
       face_image_path TEXT,
+      profile_image_path TEXT,
+      last_login_at TEXT,
+      last_logout_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (assigned_store_id) REFERENCES stores(id)
@@ -65,11 +79,15 @@ function initDb() {
 
     CREATE TABLE IF NOT EXISTS stores (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      store_group TEXT NOT NULL DEFAULT 'General',
       name TEXT NOT NULL,
       code TEXT UNIQUE NOT NULL,
-      latitude REAL NOT NULL,
-      longitude REAL NOT NULL,
-      radius_m INTEGER NOT NULL DEFAULT 75,
+      latitude REAL NOT NULL DEFAULT 0,
+      longitude REAL NOT NULL DEFAULT 0,
+      radius_m INTEGER NOT NULL DEFAULT 500,
+      location_locked INTEGER NOT NULL DEFAULT 0,
+      location_captured_by INTEGER,
+      location_captured_at TEXT,
       opening_time TEXT NOT NULL DEFAULT '10:00',
       closing_time TEXT NOT NULL DEFAULT '22:00',
       active INTEGER NOT NULL DEFAULT 1,
@@ -105,6 +123,10 @@ function initDb() {
       out_face_score REAL,
       in_location_status TEXT,
       out_location_status TEXT,
+      check_in_distance_m INTEGER,
+      check_out_distance_m INTEGER,
+      in_location_warning INTEGER NOT NULL DEFAULT 0,
+      out_location_warning INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'open',
       total_work_minutes INTEGER DEFAULT 0,
       in_face_image_path TEXT,
@@ -171,6 +193,7 @@ function initDb() {
       overtime_minutes INTEGER NOT NULL DEFAULT 0,
       total_sales_qty INTEGER NOT NULL DEFAULT 0,
       total_sales_value REAL NOT NULL DEFAULT 0,
+      location_warning_count INTEGER NOT NULL DEFAULT 0,
       pdf_url TEXT NOT NULL,
       pdf_hash TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'locked',
@@ -198,6 +221,17 @@ function initDb() {
       FOREIGN KEY (worker_id) REFERENCES users(id),
       FOREIGN KEY (attendance_id) REFERENCES attendance(id)
     );
+
+    CREATE TABLE IF NOT EXISTS login_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      event_type TEXT NOT NULL CHECK(event_type IN ('login','logout')),
+      event_time TEXT NOT NULL,
+      ip_address TEXT,
+      user_agent TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
   `);
 }
 
@@ -217,13 +251,29 @@ function ensureMigrations() {
   ensureColumn('attendance', 'in_face_reviewed_at', 'TEXT');
   ensureColumn('attendance', 'out_face_reviewed_at', 'TEXT');
   ensureColumn('attendance', 'face_review_notes', 'TEXT');
+  ensureColumn('attendance', 'check_in_distance_m', 'INTEGER');
+  ensureColumn('attendance', 'check_out_distance_m', 'INTEGER');
+  ensureColumn('attendance', 'in_location_warning', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn('attendance', 'out_location_warning', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn('users', 'profile_image_path', 'TEXT');
+  ensureColumn('users', 'last_login_at', 'TEXT');
+  ensureColumn('users', 'last_logout_at', 'TEXT');
+  ensureColumn('stores', 'store_group', "TEXT NOT NULL DEFAULT 'General'");
+  ensureColumn('stores', 'location_locked', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn('stores', 'location_captured_by', 'INTEGER');
+  ensureColumn('stores', 'location_captured_at', 'TEXT');
+  ensureColumn('monthly_attendance_reports', 'location_warning_count', 'INTEGER NOT NULL DEFAULT 0');
 }
 
 function seedDb() {
   const storeCount = db.prepare('SELECT COUNT(*) AS count FROM stores').get().count;
   if (storeCount === 0) {
-    db.prepare(`INSERT INTO stores (name, code, latitude, longitude, radius_m, opening_time, closing_time, active, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`).run('Jimmy Demo Store', 'JIMMY-DEMO', 25.2048, 55.2708, 150, '10:00', '22:00', nowIso(), nowIso());
+    const ts = nowIso();
+    const insertStore = db.prepare(`INSERT INTO stores (store_group, name, code, latitude, longitude, radius_m, opening_time, closing_time, active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`);
+    insertStore.run('OASIS MALL', 'EMAX OASIS MALL', 'EMAX-OASIS-MALL', 0, 0, STORE_RADIUS_M, '10:00', '22:00', ts, ts);
+    insertStore.run('OASIS MALL', 'Sharaf DG Oasis Mall', 'SHARAFDG-OASIS-MALL', 0, 0, STORE_RADIUS_M, '10:00', '22:00', ts, ts);
+    insertStore.run('General', 'Jimmy Demo Store', 'JIMMY-DEMO', 0, 0, STORE_RADIUS_M, '10:00', '22:00', ts, ts);
   }
 
   const productCount = db.prepare('SELECT COUNT(*) AS count FROM products').get().count;
@@ -255,13 +305,56 @@ function seedDb() {
     const insertUser = db.prepare(`INSERT INTO users (name, email, phone, employee_code, password_hash, role, active, assigned_store_id, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`);
     const ts = nowIso();
-    insertUser.run('Jimmy Admin', process.env.ADMIN_EMAIL || `admin-${crypto.randomBytes(4).toString('hex')}@local.invalid`, '', 'ADMIN-001', bcrypt.hashSync(process.env.ADMIN_PASSWORD || crypto.randomBytes(24).toString('hex'), 10), 'admin', storeId, ts, ts);
-    insertUser.run('Demo Merchandiser', process.env.WORKER_EMAIL || `merchandiser-${crypto.randomBytes(4).toString('hex')}@local.invalid`, '', 'EMP-001', bcrypt.hashSync(process.env.WORKER_PASSWORD || crypto.randomBytes(24).toString('hex'), 10), 'worker', storeId, ts, ts);
+    insertUser.run('Jimmy Admin', process.env.ADMIN_EMAIL || `admin-${crypto.randomBytes(4).toString('hex')}@local.invalid`, '', process.env.ADMIN_ID || 'ADMIN-001', bcrypt.hashSync(process.env.ADMIN_PASSWORD || crypto.randomBytes(24).toString('hex'), 10), 'admin', storeId, ts, ts);
+    insertUser.run('Demo Merchandiser', process.env.WORKER_EMAIL || `merchandiser-${crypto.randomBytes(4).toString('hex')}@local.invalid`, '', process.env.WORKER_ID || 'EMP-001', bcrypt.hashSync(process.env.WORKER_PASSWORD || crypto.randomBytes(24).toString('hex'), 10), 'worker', storeId, ts, ts);
   }
 }
 
 function signToken(user) {
   return jwt.sign({ id: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '12h' });
+}
+
+function locationWarningCountForUser(userId) {
+  const row = db.prepare(`SELECT COALESCE(SUM(COALESCE(in_location_warning,0) + COALESCE(out_location_warning,0)),0) AS count FROM attendance WHERE worker_id = ?`).get(userId);
+  return Number(row?.count || 0);
+}
+
+function serializeUser(user) {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    phone: user.phone,
+    role: user.role,
+    employee_code: user.employee_code,
+    assigned_store_id: user.assigned_store_id,
+    face_enrolled: Boolean(user.face_image_path),
+    profile_image_path: user.profile_image_path || null,
+    last_login_at: user.last_login_at || null,
+    last_logout_at: user.last_logout_at || null,
+    location_warning_count: user.role === 'worker' ? locationWarningCountForUser(user.id) : 0
+  };
+}
+
+function recordLoginEvent(userId, type, req) {
+  const ts = nowIso();
+  db.prepare(`INSERT INTO login_events (user_id, event_type, event_time, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
+    .run(userId, type, ts, req.ip || '', req.headers['user-agent'] || '', ts);
+  if (type === 'login') db.prepare('UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?').run(ts, ts, userId);
+  if (type === 'logout') db.prepare('UPDATE users SET last_logout_at = ?, updated_at = ? WHERE id = ?').run(ts, ts, userId);
+  return ts;
+}
+
+function storeNeedsLocation(store) {
+  return !Number(store.location_locked) || (Number(store.latitude || 0) === 0 && Number(store.longitude || 0) === 0);
+}
+
+function captureStoreLocationIfNeeded(store, userId, lat, lng) {
+  if (!storeNeedsLocation(store)) return { store, captured: false };
+  const ts = nowIso();
+  db.prepare(`UPDATE stores SET latitude = ?, longitude = ?, radius_m = ?, location_locked = 1, location_captured_by = ?, location_captured_at = ?, updated_at = ? WHERE id = ?`)
+    .run(Number(lat), Number(lng), STORE_RADIUS_M, userId, ts, ts, store.id);
+  return { store: { ...store, latitude: Number(lat), longitude: Number(lng), radius_m: STORE_RADIUS_M, location_locked: 1, location_captured_by: userId, location_captured_at: ts }, captured: true };
 }
 
 function auth(req, res, next) {
@@ -270,7 +363,7 @@ function auth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Missing authorization token.' });
   try {
     const payload = jwt.verify(token, JWT_SECRET);
-    const user = db.prepare('SELECT id, name, email, phone, employee_code, role, active, assigned_store_id, face_image_path FROM users WHERE id = ?').get(payload.id);
+    const user = db.prepare('SELECT id, name, email, phone, employee_code, role, active, assigned_store_id, face_image_path, profile_image_path, last_login_at, last_logout_at FROM users WHERE id = ?').get(payload.id);
     if (!user || !user.active) return res.status(401).json({ error: 'User is not active or does not exist.' });
     req.user = user;
     next();
@@ -395,12 +488,20 @@ function cleanupFaceImages(days = FACE_PHOTO_RETENTION_DAYS) {
 }
 
 function calculateLocation(store, lat, lng, accuracy) {
-  const distance = haversineMeters(store.latitude, store.longitude, Number(lat), Number(lng));
-  const allowed = distance <= Number(store.radius_m) + Math.max(Number(accuracy || 0), 0);
+  const safeLat = Number(lat);
+  const safeLng = Number(lng);
+  if (!Number.isFinite(safeLat) || !Number.isFinite(safeLng)) {
+    throw new Error('Current location is required. Please allow GPS/location permission.');
+  }
+  const radius = Number(store.radius_m || STORE_RADIUS_M);
+  const distance = haversineMeters(store.latitude, store.longitude, safeLat, safeLng);
+  const withinRange = distance <= radius;
   return {
-    passed: allowed,
+    passed: withinRange,
+    warning: !withinRange,
     distance_m: Math.round(distance),
-    status: allowed ? 'passed' : 'failed'
+    allowed_radius_m: radius,
+    status: withinRange ? 'passed' : 'warning'
   };
 }
 
@@ -447,7 +548,7 @@ async function generateWorkerMonthlyReport(workerId, month, year) {
   const endIso = end.toISOString();
 
   const rows = db.prepare(`
-    SELECT a.*, s.name AS store_name, s.opening_time, s.closing_time,
+    SELECT a.*, s.name AS store_name, s.store_group, s.opening_time, s.closing_time,
       ds.total_customers, ds.converted_customers, ds.total_qty, ds.total_value, ds.conversion_rate
     FROM attendance a
     JOIN stores s ON s.id = a.store_id
@@ -467,6 +568,7 @@ async function generateWorkerMonthlyReport(workerId, month, year) {
   const overtimeMinutes = Math.max(0, totalWorkMinutes - standardMinutes);
   const totalSalesQty = rows.reduce((sum, r) => sum + Number(r.total_qty || 0), 0);
   const totalSalesValue = rows.reduce((sum, r) => sum + Number(r.total_value || 0), 0);
+  const locationWarningCount = rows.reduce((sum, r) => sum + Number(r.in_location_warning || 0) + Number(r.out_location_warning || 0), 0);
 
   const reportId = `ATT-${year}-${String(month).padStart(2, '0')}-${String(workerId).padStart(5, '0')}`;
   const filename = `${reportId}.pdf`;
@@ -508,7 +610,8 @@ async function generateWorkerMonthlyReport(workerId, month, year) {
         ['Total Working Hours', formatMinutes(totalWorkMinutes)],
         ['Overtime', formatMinutes(overtimeMinutes)],
         ['Total Sales Quantity', totalSalesQty],
-        ['Total Sales Value', totalSalesValue.toFixed(2)]
+        ['Total Sales Value', totalSalesValue.toFixed(2)],
+        ['Location Warnings', locationWarningCount]
       ];
       summary.forEach(([k, v]) => doc.fontSize(9).text(`${k}: ${v}`));
       doc.moveDown();
@@ -535,12 +638,12 @@ async function generateWorkerMonthlyReport(workerId, month, year) {
         }
         const y = doc.y;
         doc.fontSize(7.5).text(dayjs(r.check_in_time).format('DD MMM'), 38, y, { width: 65 });
-        doc.text(r.store_name || '', 103, y, { width: 100 });
+        doc.text(`${r.store_group ? `${r.store_group} / ` : ''}${r.store_name || ''}`, 103, y, { width: 100 });
         doc.text(dayjs(r.check_in_time).format('hh:mm A'), 203, y, { width: 65 });
         doc.text(r.check_out_time ? dayjs(r.check_out_time).format('hh:mm A') : '-', 268, y, { width: 65 });
         doc.text(formatMinutes(r.total_work_minutes || 0), 333, y, { width: 55 });
         doc.text(`${statusBadgeText(r.in_face_review_status)} / ${r.out_face_review_status ? statusBadgeText(r.out_face_review_status) : '-'}`, 388, y, { width: 50 });
-        doc.text(`${r.in_location_status || '-'} / ${r.out_location_status || '-'}`, 438, y, { width: 58 });
+        doc.text(`${r.in_location_status || '-'} / ${r.out_location_status || '-'}${(Number(r.in_location_warning||0)+Number(r.out_location_warning||0)) ? ' *' : ''}`, 438, y, { width: 58 });
         doc.text(`${Number(r.total_qty || 0)} / ${Number(r.total_value || 0).toFixed(2)}`, 496, y, { width: 58 });
         doc.y = y + 17;
       });
@@ -567,8 +670,8 @@ async function generateWorkerMonthlyReport(workerId, month, year) {
   db.prepare(`
     INSERT INTO monthly_attendance_reports
       (report_id, worker_id, month, year, total_present_days, total_absent_days, late_count, early_checkout_count,
-       total_work_minutes, overtime_minutes, total_sales_qty, total_sales_value, pdf_url, pdf_hash, status, generated_at, locked_at, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'locked', ?, ?, ?, ?)
+       total_work_minutes, overtime_minutes, total_sales_qty, total_sales_value, location_warning_count, pdf_url, pdf_hash, status, generated_at, locked_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'locked', ?, ?, ?, ?)
     ON CONFLICT(worker_id, month, year) DO UPDATE SET
       total_present_days=excluded.total_present_days,
       total_absent_days=excluded.total_absent_days,
@@ -578,6 +681,7 @@ async function generateWorkerMonthlyReport(workerId, month, year) {
       overtime_minutes=excluded.overtime_minutes,
       total_sales_qty=excluded.total_sales_qty,
       total_sales_value=excluded.total_sales_value,
+      location_warning_count=excluded.location_warning_count,
       pdf_url=excluded.pdf_url,
       pdf_hash=excluded.pdf_hash,
       status='locked',
@@ -585,7 +689,7 @@ async function generateWorkerMonthlyReport(workerId, month, year) {
       locked_at=excluded.locked_at,
       updated_at=excluded.updated_at
   `).run(reportId, workerId, month, year, presentDays, absentDays, lateCount, earlyCount,
-    totalWorkMinutes, overtimeMinutes, totalSalesQty, totalSalesValue, pdfUrl, pdfHash, ts, ts, ts, ts);
+    totalWorkMinutes, overtimeMinutes, totalSalesQty, totalSalesValue, locationWarningCount, pdfUrl, pdfHash, ts, ts, ts, ts);
 
   return db.prepare('SELECT * FROM monthly_attendance_reports WHERE report_id = ?').get(reportId);
 }
@@ -611,11 +715,29 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid login details.' });
   }
   if (!user.active) return res.status(403).json({ error: 'This account is inactive.' });
-  res.json({ token: signToken(user), user: { id: user.id, name: user.name, email: user.email, role: user.role, employee_code: user.employee_code, assigned_store_id: user.assigned_store_id, face_enrolled: Boolean(user.face_image_path) } });
+  recordLoginEvent(user.id, 'login', req);
+  const freshUser = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+  res.json({ token: signToken(freshUser), user: serializeUser(freshUser) });
+});
+
+app.post('/api/auth/logout', auth, (req, res) => {
+  const loggedOutAt = recordLoginEvent(req.user.id, 'logout', req);
+  res.json({ ok: true, logged_out_at: loggedOutAt });
 });
 
 app.get('/api/me', auth, (req, res) => {
-  res.json({ user: { ...req.user, face_enrolled: Boolean(req.user.face_image_path) } });
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  res.json({ user: serializeUser(user) });
+});
+
+app.post('/api/profile/photo', auth, (req, res) => {
+  try {
+    const imagePath = saveDataUrlImage(req.body.image, `profile-user-${req.user.id}`);
+    db.prepare('UPDATE users SET profile_image_path = ?, updated_at = ? WHERE id = ?').run(imagePath, nowIso(), req.user.id);
+    res.json({ ok: true, profile_image_path: imagePath });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 app.get('/api/products', auth, (req, res) => {
@@ -650,7 +772,7 @@ app.get('/api/worker/attendance/open', auth, (req, res) => {
 
 app.get('/api/worker/attendance', auth, (req, res) => {
   const rows = db.prepare(`
-    SELECT a.*, s.name AS store_name, ds.total_customers, ds.converted_customers, ds.total_qty, ds.total_value
+    SELECT a.*, s.name AS store_name, s.store_group, ds.total_customers, ds.converted_customers, ds.total_qty, ds.total_value
     FROM attendance a
     JOIN stores s ON s.id = a.store_id
     LEFT JOIN daily_sales_reports ds ON ds.attendance_id = a.id
@@ -672,15 +794,22 @@ app.post('/api/attendance/check-in', auth, (req, res) => {
   }
   try {
     const imagePath = saveDataUrlImage(image, `checkin-worker-${req.user.id}`);
-    const location = calculateLocation(store, latitude, longitude, accuracy);
+    const capture = captureStoreLocationIfNeeded(store, req.user.id, latitude, longitude);
+    const location = calculateLocation(capture.store, latitude, longitude, accuracy);
+    if (capture.captured) {
+      location.status = 'captured';
+      location.warning = false;
+      location.passed = true;
+      location.distance_m = 0;
+      location.store_location_captured = true;
+    }
     const face = manualSelfieSubmission(req.user, imagePath);
-    if (!location.passed) return res.status(403).json({ error: `Location verification failed. Distance: ${location.distance_m}m.`, location });
     const ts = nowIso();
     const info = db.prepare(`
       INSERT INTO attendance (worker_id, store_id, check_in_time, check_in_lat, check_in_lng, check_in_accuracy,
-        in_face_score, in_location_status, status, in_face_image_path, in_face_review_status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, 'pending', ?, ?)
-    `).run(req.user.id, store.id, ts, latitude, longitude, accuracy || null, face.score, location.status, imagePath, ts, ts);
+        in_face_score, in_location_status, check_in_distance_m, in_location_warning, status, in_face_image_path, in_face_review_status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, 'pending', ?, ?)
+    `).run(req.user.id, store.id, ts, latitude, longitude, accuracy || null, face.score, location.status, location.distance_m, location.warning ? 1 : 0, imagePath, ts, ts);
     res.json({ ok: true, attendance_id: info.lastInsertRowid, check_in_time: ts, face, location });
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -691,18 +820,25 @@ app.post('/api/attendance/check-out', auth, (req, res) => {
   if (req.user.role !== 'worker') return res.status(403).json({ error: 'Only merchandisers can check out.' });
   const { latitude, longitude, accuracy, image, total_customers, converted_customers, items } = req.body || {};
   const open = db.prepare(`
-    SELECT a.*, s.latitude AS store_lat, s.longitude AS store_lng, s.radius_m, s.name AS store_name
+    SELECT a.*, s.latitude AS store_lat, s.longitude AS store_lng, s.radius_m, s.name AS store_name, s.location_locked, s.location_captured_by, s.location_captured_at
     FROM attendance a JOIN stores s ON s.id = a.store_id
     WHERE a.worker_id = ? AND a.status = 'open'
     ORDER BY a.id DESC LIMIT 1
   `).get(req.user.id);
   if (!open) return res.status(404).json({ error: 'No open check-in found.' });
-  const store = { latitude: open.store_lat, longitude: open.store_lng, radius_m: open.radius_m };
+  const store = { id: open.store_id, latitude: open.store_lat, longitude: open.store_lng, radius_m: open.radius_m, location_locked: open.location_locked, location_captured_by: open.location_captured_by, location_captured_at: open.location_captured_at };
   try {
     const imagePath = saveDataUrlImage(image, `checkout-worker-${req.user.id}`);
-    const location = calculateLocation(store, latitude, longitude, accuracy);
+    const capture = captureStoreLocationIfNeeded(store, req.user.id, latitude, longitude);
+    const location = calculateLocation(capture.store, latitude, longitude, accuracy);
+    if (capture.captured) {
+      location.status = 'captured';
+      location.warning = false;
+      location.passed = true;
+      location.distance_m = 0;
+      location.store_location_captured = true;
+    }
     const face = manualSelfieSubmission(req.user, imagePath);
-    if (!location.passed) return res.status(403).json({ error: `Location verification failed. Distance: ${location.distance_m}m.`, location });
 
     const safeItems = Array.isArray(items) ? items : [];
     let totalQty = 0;
@@ -727,9 +863,9 @@ app.post('/api/attendance/check-out', auth, (req, res) => {
     const updateTx = db.transaction(() => {
       db.prepare(`
         UPDATE attendance SET check_out_time = ?, check_out_lat = ?, check_out_lng = ?, check_out_accuracy = ?,
-          out_face_score = ?, out_location_status = ?, status = 'closed', total_work_minutes = ?, out_face_image_path = ?, out_face_review_status = 'pending', updated_at = ?
+          out_face_score = ?, out_location_status = ?, check_out_distance_m = ?, out_location_warning = ?, status = 'closed', total_work_minutes = ?, out_face_image_path = ?, out_face_review_status = 'pending', updated_at = ?
         WHERE id = ?
-      `).run(checkoutTime, latitude, longitude, accuracy || null, face.score, location.status, workMinutes, imagePath, checkoutTime, open.id);
+      `).run(checkoutTime, latitude, longitude, accuracy || null, face.score, location.status, location.distance_m, location.warning ? 1 : 0, workMinutes, imagePath, checkoutTime, open.id);
 
       const reportInfo = db.prepare(`
         INSERT INTO daily_sales_reports (attendance_id, worker_id, store_id, report_date, total_customers, converted_customers,
@@ -792,19 +928,21 @@ app.get('/verify-report/:reportId', (req, res) => {
 
 // Admin APIs
 app.get('/api/admin/users', auth, requireAdmin, (req, res) => {
-  const rows = db.prepare(`SELECT u.id, u.name, u.email, u.phone, u.employee_code, u.role, u.active, u.assigned_store_id, u.face_image_path, s.name AS store_name
+  const rows = db.prepare(`SELECT u.id, u.name, u.email, u.phone, u.employee_code, u.role, u.active, u.assigned_store_id, u.face_image_path, u.profile_image_path, u.last_login_at, u.last_logout_at, s.name AS store_name, s.store_group, COALESCE((SELECT SUM(COALESCE(in_location_warning,0) + COALESCE(out_location_warning,0)) FROM attendance a WHERE a.worker_id = u.id),0) AS location_warning_count
     FROM users u LEFT JOIN stores s ON s.id = u.assigned_store_id ORDER BY u.created_at DESC`).all();
   res.json({ users: rows });
 });
 
 app.post('/api/admin/users', auth, requireAdmin, (req, res) => {
-  const { name, email, password, phone, employee_code, role, assigned_store_id } = req.body || {};
+  const { name, email, password, phone, employee_code, role, assigned_store_id, profile_image } = req.body || {};
   if (!name || !email || !password) return res.status(400).json({ error: 'Name, email, and password are required.' });
   const safeRole = ['admin', 'manager', 'worker'].includes(role) ? role : 'worker';
   try {
     const ts = nowIso();
-    const info = db.prepare(`INSERT INTO users (name, email, phone, employee_code, password_hash, role, active, assigned_store_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`).run(name, String(email).toLowerCase().trim(), phone || '', employee_code || null, bcrypt.hashSync(password, 10), safeRole, assigned_store_id || null, ts, ts);
+    let profileImagePath = null;
+    if (profile_image) profileImagePath = saveDataUrlImage(profile_image, `profile-user-new`);
+    const info = db.prepare(`INSERT INTO users (name, email, phone, employee_code, password_hash, role, active, assigned_store_id, profile_image_path, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`).run(name, String(email).toLowerCase().trim(), phone || '', employee_code || null, bcrypt.hashSync(password, 10), safeRole, assigned_store_id || null, profileImagePath, ts, ts);
     res.json({ ok: true, id: info.lastInsertRowid });
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -812,7 +950,7 @@ app.post('/api/admin/users', auth, requireAdmin, (req, res) => {
 });
 
 app.patch('/api/admin/users/:id', auth, requireAdmin, (req, res) => {
-  const { name, phone, employee_code, role, assigned_store_id, active, password } = req.body || {};
+  const { name, phone, employee_code, role, assigned_store_id, active, password, profile_image } = req.body || {};
   const current = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!current) return res.status(404).json({ error: 'User not found.' });
   const fields = [];
@@ -821,10 +959,19 @@ app.patch('/api/admin/users/:id', auth, requireAdmin, (req, res) => {
     if (value !== undefined) { fields.push(`${key} = ?`); values.push(value); }
   }
   if (password) { fields.push('password_hash = ?'); values.push(bcrypt.hashSync(password, 10)); }
+  if (profile_image) { fields.push('profile_image_path = ?'); values.push(saveDataUrlImage(profile_image, `profile-user-${req.params.id}`)); }
   if (fields.length === 0) return res.json({ ok: true });
   fields.push('updated_at = ?'); values.push(nowIso(), req.params.id);
   db.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`).run(...values);
   res.json({ ok: true });
+});
+
+app.delete('/api/admin/users/:id', auth, requireAdmin, (req, res) => {
+  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!target) return res.status(404).json({ error: 'User not found.' });
+  if (Number(target.id) === Number(req.user.id)) return res.status(400).json({ error: 'You cannot deactivate your own account.' });
+  db.prepare('UPDATE users SET active = 0, updated_at = ? WHERE id = ?').run(nowIso(), req.params.id);
+  res.json({ ok: true, message: 'User deactivated. Old records are preserved.' });
 });
 
 app.get('/api/admin/products', auth, requireAdmin, (req, res) => {
@@ -859,23 +1006,26 @@ app.delete('/api/admin/products/:id', auth, requireAdmin, (req, res) => {
 });
 
 app.get('/api/admin/stores', auth, requireAdmin, (req, res) => {
-  res.json({ stores: db.prepare('SELECT * FROM stores ORDER BY active DESC, name ASC').all() });
+  res.json({ stores: db.prepare('SELECT * FROM stores ORDER BY active DESC, store_group ASC, name ASC').all() });
 });
 
 app.post('/api/admin/stores', auth, requireAdmin, (req, res) => {
-  const { name, code, latitude, longitude, radius_m, opening_time, closing_time } = req.body || {};
-  if (!name || !code || latitude === undefined || longitude === undefined) return res.status(400).json({ error: 'Store name, code, latitude, and longitude are required.' });
+  const { store_group, name, code, latitude, longitude, radius_m, opening_time, closing_time } = req.body || {};
+  if (!name) return res.status(400).json({ error: 'Store name is required.' });
+  const safeGroup = String(store_group || 'General').trim() || 'General';
+  const safeCode = String(code || slugCode(`${safeGroup}-${name}`)).trim();
   const ts = nowIso();
-  const info = db.prepare(`INSERT INTO stores (name, code, latitude, longitude, radius_m, opening_time, closing_time, active, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`).run(name, code, Number(latitude), Number(longitude), Number(radius_m || 75), opening_time || '10:00', closing_time || '22:00', ts, ts);
+  const hasLocation = latitude !== undefined && longitude !== undefined && String(latitude) !== '' && String(longitude) !== '';
+  const info = db.prepare(`INSERT INTO stores (store_group, name, code, latitude, longitude, radius_m, location_locked, opening_time, closing_time, active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`).run(safeGroup, name, safeCode, hasLocation ? Number(latitude) : 0, hasLocation ? Number(longitude) : 0, Number(radius_m || STORE_RADIUS_M), hasLocation ? 1 : 0, opening_time || '10:00', closing_time || '22:00', ts, ts);
   res.json({ ok: true, id: info.lastInsertRowid });
 });
 
 app.patch('/api/admin/stores/:id', auth, requireAdmin, (req, res) => {
-  const { name, code, latitude, longitude, radius_m, opening_time, closing_time, active } = req.body || {};
+  const { store_group, name, code, latitude, longitude, radius_m, opening_time, closing_time, active, location_locked } = req.body || {};
   const fields = [];
   const values = [];
-  for (const [key, value] of Object.entries({ name, code, latitude, longitude, radius_m, opening_time, closing_time, active })) {
+  for (const [key, value] of Object.entries({ store_group, name, code, latitude, longitude, radius_m, opening_time, closing_time, active, location_locked })) {
     if (value !== undefined) { fields.push(`${key} = ?`); values.push(value); }
   }
   if (!fields.length) return res.json({ ok: true });
@@ -902,10 +1052,16 @@ app.patch('/api/admin/attendance/:id/face-review', auth, requireAdmin, (req, res
     .run(safeStatus, req.user.id, ts, newNote, ts, req.params.id);
   res.json({ ok: true });
 });
+app.delete('/api/admin/stores/:id', auth, requireAdmin, (req, res) => {
+  const target = db.prepare('SELECT * FROM stores WHERE id = ?').get(req.params.id);
+  if (!target) return res.status(404).json({ error: 'Store not found.' });
+  db.prepare('UPDATE stores SET active = 0, updated_at = ? WHERE id = ?').run(nowIso(), req.params.id);
+  res.json({ ok: true, message: 'Store removed from active lists. Old attendance and sales history are preserved.' });
+});
 
 app.get('/api/admin/attendance', auth, requireAdmin, (req, res) => {
   const rows = db.prepare(`
-    SELECT a.*, u.name AS worker_name, u.employee_code, s.name AS store_name, ds.total_customers, ds.converted_customers, ds.total_qty, ds.total_value
+    SELECT a.*, u.name AS worker_name, u.employee_code, s.name AS store_name, s.store_group, ds.total_customers, ds.converted_customers, ds.total_qty, ds.total_value
     FROM attendance a
     JOIN users u ON u.id = a.worker_id
     JOIN stores s ON s.id = a.store_id

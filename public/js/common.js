@@ -1,6 +1,13 @@
 function token() { return localStorage.getItem('token'); }
 function currentUser() { try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; } }
-function logout() { localStorage.removeItem('token'); localStorage.removeItem('user'); location.href = '/'; }
+async function logout() {
+  try {
+    if (token()) await api('/api/auth/logout', { method: 'POST' });
+  } catch {}
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  location.href = '/';
+}
 async function api(url, options = {}, requireAuth = true) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
   if (requireAuth && token()) headers.Authorization = `Bearer ${token()}`;
@@ -51,6 +58,20 @@ function formToObject(form) {
   const out = {};
   new FormData(form).forEach((v, k) => out[k] = v);
   return out;
+}
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) return resolve(null);
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+function avatarHtml(path, name = 'User') {
+  if (path) return `<img class="avatar" src="${path}" alt="${escapeHtml(name)} profile picture">`;
+  const initial = escapeHtml(String(name || 'U').trim()[0] || 'U');
+  return `<div class="avatar avatar-fallback">${initial}</div>`;
 }
 function downloadReport(reportId) {
   fetch(`/api/reports/${encodeURIComponent(reportId)}/download`, { headers: { Authorization: `Bearer ${token()}` } })
