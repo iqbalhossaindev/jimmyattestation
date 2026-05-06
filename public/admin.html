@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin Dashboard - Jimmy</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <div class="mobile-menu"><span><img src="/assets/jimmy-logo.jpg" alt="Jimmy"> Admin</span><button class="small secondary" onclick="toggleSidebar()">Menu</button></div>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="logo"><img src="/assets/jimmy-logo.jpg" alt="Jimmy"><span>Jimmy</span></div>
+      <nav class="nav">
+        <a href="#overview" class="active" data-section-link>Overview</a>
+        <a href="#workers" data-section-link>Merchandisers</a>
+        <a href="#stores" data-section-link>Stores</a>
+        <a href="#products" data-section-link>Products</a>
+        <a href="#attendance" data-section-link>Attendance</a>
+        <a href="#reports" data-section-link>Reports</a>
+        <button onclick="logout()">Logout</button>
+      </nav>
+      <div class="hint">Developer: <a class="footer-link" href="https://www.kestford.com" target="_blank">www.kestford.com</a></div>
+    </aside>
+    <main class="content">
+      <div class="topbar"><div><h1>Admin Dashboard</h1><p id="adminWelcome">Manage merchandisers, stores, products, attendance, and PDF reports.</p></div></div>
+
+      <section id="overview" class="section active">
+        <div class="grid cols-4">
+          <div class="stat"><span class="muted">Merchandisers</span><b id="statWorkers">0</b></div>
+          <div class="stat"><span class="muted">Stores</span><b id="statStores">0</b></div>
+          <div class="stat"><span class="muted">Products</span><b id="statProducts">0</b></div>
+          <div class="stat"><span class="muted">Attendance Logs</span><b id="statAttendance">0</b></div>
+        </div>
+        <div class="card" style="margin-top:18px">
+          <h2>System Notes</h2>
+          <p class="muted">This project includes full attendance flow, GPS geofence validation, face image capture, sales checkout, admin product management, and monthly PDF report generation. Face verification uses free manual selfie review: merchandisers submit a store-background selfie at check-in and check-out, then admin approves or rejects it from the backend. Selfie photos are deleted automatically after 40 days.</p>
+        </div>
+      </section>
+
+      <section id="workers" class="section">
+        <div class="grid cols-2">
+          <div class="card">
+            <h2>Add Merchandiser / Admin</h2>
+            <form id="workerForm" class="form-grid">
+              <div><label>Name</label><input name="name" required></div>
+              <div><label>Email</label><input name="email" type="email" required></div>
+              <div><label>Password</label><input name="password" type="password" required></div>
+              <div><label>Phone</label><input name="phone"></div>
+              <div><label>Employee Code</label><input name="employee_code"></div>
+              <div><label>Role</label><select name="role"><option value="worker">Merchandiser</option><option value="manager">Manager</option><option value="admin">Admin</option></select></div>
+              <div><label>Assigned Store</label><select name="assigned_store_id" id="workerStoreSelect"></select></div>
+              <button type="submit">Create User</button>
+            </form>
+          </div>
+          <div class="card">
+            <h2>Users</h2>
+            <div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Store</th><th>Selfie Review</th><th>Status</th></tr></thead><tbody id="usersRows"></tbody></table></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="stores" class="section">
+        <div class="grid cols-2">
+          <div class="card">
+            <h2>Add Store</h2>
+            <form id="storeForm" class="form-grid">
+              <div><label>Store Name</label><input name="name" required></div>
+              <div><label>Code</label><input name="code" required></div>
+              <div><label>Latitude</label><input name="latitude" type="number" step="any" required></div>
+              <div><label>Longitude</label><input name="longitude" type="number" step="any" required></div>
+              <div><label>Allowed Radius Meters</label><input name="radius_m" type="number" value="75"></div>
+              <div><label>Opening Time</label><input name="opening_time" value="10:00"></div>
+              <div><label>Closing Time</label><input name="closing_time" value="22:00"></div>
+              <button type="submit">Add Store</button>
+            </form>
+          </div>
+          <div class="card">
+            <h2>Stores</h2>
+            <div class="table-wrap"><table><thead><tr><th>Name</th><th>Code</th><th>Lat/Lng</th><th>Radius</th><th>Hours</th><th>Status</th></tr></thead><tbody id="storesRows"></tbody></table></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="products" class="section">
+        <div class="grid cols-2">
+          <div class="card">
+            <h2>Add Product</h2>
+            <form id="productForm" class="form-grid">
+              <div><label>Model</label><input name="model" required></div>
+              <div><label>Name</label><input name="name"></div>
+              <div><label>Category</label><input name="category"></div>
+              <div><label>Default Price</label><input name="default_price" type="number" step="0.01" value="0"></div>
+              <div><label>Display Order</label><input name="display_order" type="number" value="0"></div>
+              <button type="submit">Add Product</button>
+            </form>
+          </div>
+          <div class="card">
+            <h2>Products</h2>
+            <div class="table-wrap"><table><thead><tr><th>Model</th><th>Category</th><th>Price</th><th>Order</th><th>Status</th><th>Action</th></tr></thead><tbody id="productsRows"></tbody></table></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="attendance" class="section">
+        <div class="card">
+          <h2>All Attendance and Sales</h2>
+          <div class="table-wrap"><table><thead><tr><th>Merchandiser</th><th>Store</th><th>Check In</th><th>Check Out</th><th>Hours</th><th>Customers</th><th>Converted</th><th>Qty</th><th>Value</th><th>Check-In Selfie</th><th>Check-Out Selfie</th><th>Manual Review</th><th>Status</th></tr></thead><tbody id="adminAttendanceRows"></tbody></table></div>
+        </div>
+      </section>
+
+      <section id="reports" class="section">
+        <div class="card">
+          <h2>Generate Monthly PDF Reports</h2>
+          <div class="grid cols-4">
+            <div><label>Month</label><input id="reportMonth" type="number" min="1" max="12"></div>
+            <div><label>Year</label><input id="reportYear" type="number"></div>
+            <div style="align-self:end"><button onclick="generateReports()">Generate</button></div>
+            <div style="align-self:end"><button class="secondary" onclick="loadReports()">Refresh</button></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:18px">
+          <h2>Monthly Reports</h2>
+          <div class="table-wrap"><table><thead><tr><th>Report ID</th><th>Merchandiser</th><th>Month</th><th>Present</th><th>Absent</th><th>Hours</th><th>Sales Qty</th><th>Sales Value</th><th>Download</th><th>Verify</th></tr></thead><tbody id="adminReportRows"></tbody></table></div>
+        </div>
+      </section>
+      <footer>Jimmy Attendance System. Developer: <a href="https://www.kestford.com" target="_blank">www.kestford.com</a></footer>
+    </main>
+  </div>
+  <script src="/js/common.js"></script>
+  <script src="/js/admin.js"></script>
+</body>
+</html>
