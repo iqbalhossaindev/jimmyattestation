@@ -24,8 +24,7 @@ const DB_DIR = path.join(STORAGE_DIR, 'db');
 const REPORTS_DIR = path.join(STORAGE_DIR, 'reports');
 const FACES_DIR = path.join(STORAGE_DIR, 'faces');
 const PROFILES_DIR = path.join(STORAGE_DIR, 'profiles');
-const LOGO_PATH = path.join(ROOT, 'public', 'assets', 'jimmy-logo.jpg');
-const FACE_PHOTO_RETENTION_DAYS = Number(process.env.FACE_PHOTO_RETENTION_DAYS || 40);
+const LOGO_PATH = path.join(ROOT, 'public', 'assets', 'jimmy-logo-wordmark.png');
 const FACE_VERIFY_MODE = process.env.FACE_VERIFY_MODE || 'manual';
 const STORE_RADIUS_M = Number(process.env.STORE_RADIUS_M || 500);
 
@@ -425,7 +424,9 @@ function storageUrlToPath(url) {
   return path.join(ROOT, url.replace(/^\//, ''));
 }
 
-function cleanupFaceImages(days = FACE_PHOTO_RETENTION_DAYS) {
+function cleanupFaceImages(days = null) {
+  // Auto-deletion has been disabled. Records and selfies remain unless removed manually.
+  return;
   const cutoff = Date.now() - Number(days || 40) * 24 * 60 * 60 * 1000;
   const attendanceRows = db.prepare('SELECT id, in_face_image_path, out_face_image_path, in_face_review_status, out_face_review_status FROM attendance').all();
   const updateAttendancePath = db.prepare('UPDATE attendance SET in_face_image_path = ?, out_face_image_path = ?, in_face_review_status = ?, out_face_review_status = ?, updated_at = ? WHERE id = ?');
@@ -1101,14 +1102,6 @@ app.post('/api/admin/reports/monthly/generate', auth, requireAdmin, async (req, 
   }
 });
 
-cron.schedule('30 2 * * *', () => {
-  try {
-    cleanupFaceImages(FACE_PHOTO_RETENTION_DAYS);
-    console.log(`Face selfie cleanup finished. Retention: ${FACE_PHOTO_RETENTION_DAYS} days.`);
-  } catch (error) {
-    console.error('Face selfie cleanup failed:', error);
-  }
-});
 
 cron.schedule('5 0 1 * *', async () => {
   const previousMonth = dayjs().subtract(1, 'month');
@@ -1127,10 +1120,9 @@ app.get('*', (req, res) => {
 initDb();
 ensureMigrations();
 seedDb();
-cleanupFaceImages(FACE_PHOTO_RETENTION_DAYS);
 app.listen(PORT, () => {
   console.log(`Jimmy attendance system running at ${APP_URL}`);
   console.log('Login credentials are not printed. Use environment variables or the private login note.');
-  console.log(`Manual selfie verification is enabled. Selfie retention: ${FACE_PHOTO_RETENTION_DAYS} days.`);
+  console.log('Manual selfie verification is enabled. Records are kept until you remove them manually.');
   console.log('Merchandiser credentials are not printed. Use environment variables or the private login note.');
 });

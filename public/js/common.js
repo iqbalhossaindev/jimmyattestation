@@ -88,3 +88,16 @@ function downloadReport(reportId) {
     })
     .catch(err => alert(err.message));
 }
+
+function hideSplashScreen() {
+  const splash = document.getElementById('appSplash');
+  if (!splash) return;
+  setTimeout(() => splash.classList.add('hide'), 350);
+  setTimeout(() => splash.remove(), 900);
+}
+window.addEventListener('load', hideSplashScreen);
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}

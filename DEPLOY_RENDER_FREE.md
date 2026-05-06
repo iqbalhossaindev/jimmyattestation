@@ -33,7 +33,6 @@ WORKER_EMAIL=staff@example.com
 WORKER_PASSWORD=change_this_password
 
 FACE_VERIFY_MODE=manual
-FACE_PHOTO_RETENTION_DAYS=40
 STORE_RADIUS_M=500
 ```
 
@@ -57,3 +56,8 @@ Open the Render URL and test:
 ## Important
 
 Render Free is suitable for demo/testing. It is not ideal for official HR, salary, or long-term attendance data because this project currently uses SQLite and local file storage.
+
+
+## Important storage note
+
+This app no longer auto-deletes records. On free hosting, local files can still be lost after restart or redeploy. For real long-term storage, use a persistent disk or external database/storage.

@@ -20,7 +20,7 @@ A complete Node.js website with backend for Jimmy store attendance, sales checko
 - Daily logout sales report with products, quantity, value, total customers, converted customers, and conversion rate.
 - Product add/disable management from admin.
 - Monthly PDF attendance verification report with Jimmy logo and QR verification link.
-- Selfie photos are deleted automatically after 40 days.
+- Selfie photos and records are kept until you remove them manually.
 - Footer developer detail: www.kestford.com
 
 ## Run locally
@@ -54,7 +54,6 @@ WORKER_EMAIL=staff@example.com
 WORKER_PASSWORD=change_this_password
 
 FACE_VERIFY_MODE=manual
-FACE_PHOTO_RETENTION_DAYS=40
 STORE_RADIUS_M=500
 ```
 

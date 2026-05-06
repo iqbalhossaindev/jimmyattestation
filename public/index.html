@@ -5,11 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Jimmy Login</title>
   <link rel="stylesheet" href="/css/styles.css">
+  <meta name="theme-color" content="#0c47a5">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Jimmy">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="/assets/jimmy-logo.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+  <link rel="mask-icon" href="/assets/jimmy-logo-mask.svg" color="#0c47a5">
+  <meta name="msapplication-TileColor" content="#0c47a5">
+  <meta name="msapplication-config" content="/browserconfig.xml">
 </head>
 <body class="login-body">
+  <div id="appSplash" class="app-splash" aria-hidden="true">
+    <div class="app-splash-card">
+      <img class="app-splash-logo" src="/assets/jimmy-logo.svg" alt="Jimmy">
+      <p class="app-splash-subtitle">Attendance and store sales system</p>
+      <div class="app-splash-dots"><span></span><span></span><span></span></div>
+    </div>
+  </div>
   <main class="login-page-wrap">
     <section class="login-card" aria-label="Jimmy login">
-      <img class="login-brand-img" src="/assets/jimmy-logo-transparent.png" alt="Jimmy logo">
+      <img class="login-brand-img" src="/assets/jimmy-logo.svg" alt="Jimmy logo">
 
       <div class="login-heading-block">
         <h1>Welcome Back</h1>

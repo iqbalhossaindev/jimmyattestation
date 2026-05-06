@@ -5,12 +5,31 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Staff Dashboard - Jimmy</title>
   <link rel="stylesheet" href="/css/styles.css">
+  <meta name="theme-color" content="#0c47a5">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Jimmy">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="/assets/jimmy-logo.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+  <link rel="mask-icon" href="/assets/jimmy-logo-mask.svg" color="#0c47a5">
+  <meta name="msapplication-TileColor" content="#0c47a5">
+  <meta name="msapplication-config" content="/browserconfig.xml">
 </head>
 <body>
-  <div class="mobile-menu"><span><img src="/assets/jimmy-logo.jpg" alt="Jimmy"> Staff</span><button class="small secondary" onclick="toggleSidebar()">Menu</button></div>
+  <div id="appSplash" class="app-splash" aria-hidden="true">
+    <div class="app-splash-card">
+      <img class="app-splash-logo" src="/assets/jimmy-logo.svg" alt="Jimmy">
+      <p class="app-splash-subtitle">Attendance and store sales system</p>
+      <div class="app-splash-dots"><span></span><span></span><span></span></div>
+    </div>
+  </div>
+  <div class="mobile-menu"><span><img src="/assets/jimmy-logo.svg" alt="Jimmy"> Staff</span><button class="small secondary" onclick="toggleSidebar()">Menu</button></div>
   <div class="app-shell">
     <aside class="sidebar" id="sidebar">
-      <div class="logo"><img src="/assets/jimmy-logo.jpg" alt="Jimmy"><span>Jimmy</span></div>
+      <div class="logo"><img src="/assets/jimmy-logo.svg" alt="Jimmy"><span>Jimmy</span></div>
       <nav class="nav">
         <a href="#dashboard" class="active" data-section-link>Dashboard</a>
         <a href="#profile" data-section-link>Profile</a>

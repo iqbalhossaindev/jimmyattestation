@@ -52,7 +52,6 @@ WORKER_ID=from_private_note
 WORKER_EMAIL=from_private_note
 WORKER_PASSWORD=from_private_note
 FACE_VERIFY_MODE=manual
-FACE_PHOTO_RETENTION_DAYS=40
 STORE_RADIUS_M=500
 ```
 
